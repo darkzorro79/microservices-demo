@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hipster-shop
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/darkzorro79/microservices-demo.git
+    targetRevision: main
+    path: helm-chart
+    helm:
+      values: |
+        frontend:
+          host: hipster-shop.otservice.ru
+          ingress:
+            create: true
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            tls:
+              - secretName: hipster-shop-tls
+                hosts:
+                  - hipster-shop.otservice.ru
+            hosts:
+              - host: hipster-shop.otservice.ru
+                paths:
+                  - path: /
+                    pathType: Prefix
+        global:
+          imagePullSecrets:
+            - name: ghcr-secret
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hipster-shop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

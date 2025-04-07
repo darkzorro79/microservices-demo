@@ -1,0 +1,114 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Тестирование
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: "./.dotnet"
+        with:
+          dotnet-version: '9.0'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      # Тесты для разных микросервисов
+      - name: Test Frontend
+        run: |
+          cd src/frontend
+          go test ./...
+
+      - name: Test Productcatalog Service
+        run: |
+          cd src/productcatalogservice
+          go test ./...
+          
+      # Аналогично настраиваем тесты для остальных микросервисов
+
+  build-and-push:
+    name: Сборка и публикация образов
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Создаем переменную для общего тега
+      - name: Set image tag
+        id: tag
+        run: |
+          echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      # Собираем и публикуем Docker образы
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/frontend:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/frontend:latest
+
+      - name: Build and push productcatalogservice
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/productcatalogservice
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/productcatalogservice:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/productcatalogservice:latest
+
+      - name: Build and push cartservice
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/cartservice/src
+          file: ./src/cartservice/src/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/cartservice:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/hipster-shop/cartservice:latest
+
+      # Аналогично для других сервисов
+
+      # Обновляем Helm values с новыми тегами образов
+      - name: Update Helm chart values
+        if: github.event_name == 'push'
+        run: |
+          echo "Updating Helm values with new image tags: ${{ steps.tag.outputs.tag }}"
+          # Обновляем глобальный тег для всех образов
+          yq e '.images.tag = "${{ steps.tag.outputs.tag }}"' -i ./helm-chart/values.yaml
+          
+      - name: Commit and push updated Helm values
+        if: github.event_name == 'push'
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "ci: update image tags to ${{ steps.tag.outputs.tag }}"
+          file_pattern: helm-chart/values.yaml
