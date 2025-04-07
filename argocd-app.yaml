@@ -18,7 +18,7 @@ spec:
             create: true
             annotations:
               kubernetes.io/ingress.class: nginx # Укажите ваш класс Ingress, если отличается
-              cert-manager.io/cluster-issuer: letsencrypt-prod
+              cert-manager.io/cluster-issuer: letsencrypt-production
             tls:
               - secretName: hipster-shop-tls
                 hosts:
