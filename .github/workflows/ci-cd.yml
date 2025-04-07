@@ -99,16 +99,13 @@ jobs:
       # Аналогично для других сервисов
 
       # Обновляем Helm values с новыми тегами образов
-      - name: Update Helm chart values
-        if: github.event_name == 'push'
-        run: |
-          echo "Updating Helm values with new image tags: ${{ steps.tag.outputs.tag }}"
-          # Обновляем глобальный тег для всех образов
-          yq e '.images.tag = "${{ steps.tag.outputs.tag }}"' -i ./helm-chart/values.yaml
-          
       - name: Commit and push updated Helm values
         if: github.event_name == 'push'
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "ci: update image tags to ${{ steps.tag.outputs.tag }}"
           file_pattern: helm-chart/values.yaml
+          push_options: '--force'
+          commit_options: '--no-verify'
+          repository: .
+          github_token: ${{ secrets.PAT }}
